@@ -1,0 +1,60 @@
+name: Checklane builds cache
+
+# Integration test for the builds cache on Checklane runners: setup-php from
+# this branch with use_builds_cache, on PHP 8.3 to 8.5, next to GitHub's
+# ubuntu-24.04 for reference. Every requested extension must load and no
+# library php or its extensions link against may be missing.
+on:
+  push:
+    branches:
+      - checklane-builds-cache-test
+  workflow_dispatch:
+
+env:
+  EXTENSIONS: mbstring, dom, fileinfo, pgsql, pdo_pgsql, redis, intl, zip, gd, bcmath, sqlite3, curl, imagick
+
+jobs:
+  setup-php:
+    name: ${{ matrix.runner }} (PHP ${{ matrix.php }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [checklane-2vcpu]
+        php: ['8.3', '8.4', '8.5']
+        include:
+          - runner: ubuntu-24.04
+            php: '8.5'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Runner
+        run: echo "RUNNER_NAME=$RUNNER_NAME RUNNER_ENVIRONMENT=$RUNNER_ENVIRONMENT ImageOS=${ImageOS:-}"
+
+      - name: Setup PHP
+        uses: ./
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: ${{ env.EXTENSIONS }}
+          coverage: none
+          ini-file: production
+        env:
+          use_builds_cache: true
+
+      - name: Check PHP
+        run: |
+          php -v
+          test "$(php -r 'echo PHP_MAJOR_VERSION . "." . PHP_MINOR_VERSION;')" = "${{ matrix.php }}"
+          php -r '
+            foreach (array_map("trim", explode(",", getenv("EXTENSIONS"))) as $extension) {
+              if (!extension_loaded($extension)) { fwrite(STDERR, "missing $extension\n"); exit(1); }
+            }
+            echo "all extensions loaded\n";
+          '
+          missing=$(for file in "$(readlink -f "$(command -v php)")" "$(php -r 'echo ini_get("extension_dir");')"/*.so; do
+            ldd "$file" | { grep 'not found' || true; } | sed "s|^|$file: |"
+          done)
+          if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
+          echo "no missing libraries"
+          composer --version
