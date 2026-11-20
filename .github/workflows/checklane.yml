@@ -1,7 +1,7 @@
 name: Checklane builds cache
 
-# Integration test for the builds cache on Checklane runners: setup-php from
-# this branch with use_builds_cache, on PHP 8.3 to 8.5, next to GitHub's
+# Integration test for the builds cache on Checklane runners: checklane/setup-php@v2
+# as a workflow would use it, with use_builds_cache, on PHP 8.3 to 8.5, next to GitHub's
 # ubuntu-24.04 for reference. Every requested extension must load and no
 # library php or its extensions link against may be missing.
 on:
@@ -27,13 +27,12 @@ jobs:
           - runner: ubuntu-24.04
             php: '8.5'
     steps:
-      - uses: actions/checkout@v7
 
       - name: Runner
         run: echo "RUNNER_NAME=$RUNNER_NAME RUNNER_ENVIRONMENT=$RUNNER_ENVIRONMENT ImageOS=${ImageOS:-}"
 
       - name: Setup PHP
-        uses: ./
+        uses: checklane/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
           extensions: ${{ env.EXTENSIONS }}
