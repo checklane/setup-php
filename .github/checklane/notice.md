@@ -9,4 +9,4 @@
 >     use_builds_cache: true
 > ```
 >
-> `v2` follows upstream’s `v2` release. Upstream releases from `2.40.0` on are also tagged here under their version, for pinning. Once setup-php supports Checklane runners itself, switch back to `shivammathur/setup-php@v2`.
+> `v2` follows upstream’s `v2` release. Upstream releases from `2.40.0` on are also tagged here under their version, for pinning. To get Checklane runners into setup-php itself, add a 👍 to [the request on setup-php](https://github.com/shivammathur/setup-php/issues/1164). Once it’s in, switch back to `shivammathur/setup-php@v2`.
