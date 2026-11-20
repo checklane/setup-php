@@ -1,0 +1,101 @@
+name: Sync with upstream
+
+# Rebuilds main and releases/v2 from shivammathur/setup-php with Checklane
+# runners allowed to use the builds cache (.github/checklane/sync.sh), sets PHP
+# up from the result on a Checklane runner, and pushes it only if that works.
+# releases/v2 also moves the v2 tag and tags the upstream version once.
+on:
+  schedule:
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: ${{ matrix.branch }}
+    runs-on: checklane-2vcpu
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - branch: main
+            upstream: main
+          - branch: releases/v2
+            upstream: releases/v2
+            tag: v2
+    env:
+      BRANCH: ${{ matrix.branch }}
+      TAG: ${{ matrix.tag }}
+      EXTENSIONS: mbstring, dom, fileinfo, pgsql, pdo_pgsql, redis, intl, zip, gd, bcmath, sqlite3, curl, imagick
+      GIT_AUTHOR_NAME: github-actions[bot]
+      GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+      GIT_COMMITTER_NAME: github-actions[bot]
+      GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Build
+        id: build
+        run: |
+          git fetch --no-tags https://github.com/shivammathur/setup-php.git \
+            "+refs/heads/${{ matrix.upstream }}:refs/remotes/upstream/${{ matrix.upstream }}"
+          commit=$(.github/checklane/sync.sh "upstream/${{ matrix.upstream }}" "$BRANCH")
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          if [ -n "$commit" ]; then
+            git worktree add --detach candidate "$commit"
+            git log -1 --format='%H %s' "$commit"
+          else
+            echo "$BRANCH is up to date"
+          fi
+
+      - name: Setup PHP from the new commit
+        if: steps.build.outputs.commit
+        uses: ./candidate
+        with:
+          php-version: '8.4'
+          extensions: ${{ env.EXTENSIONS }}
+          coverage: none
+          ini-file: production
+        env:
+          use_builds_cache: true
+
+      - name: Check PHP
+        if: steps.build.outputs.commit
+        run: |
+          php -v
+          php -r '
+            foreach (array_map("trim", explode(",", getenv("EXTENSIONS"))) as $extension) {
+              if (!extension_loaded($extension)) { fwrite(STDERR, "missing $extension\n"); exit(1); }
+            }
+            echo "all extensions loaded\n";
+          '
+          missing=$(for file in "$(readlink -f "$(command -v php)")" "$(php -r 'echo ini_get("extension_dir");')"/*.so; do
+            ldd "$file" | { grep 'not found' || true; } | sed "s|^|$file: |"
+          done)
+          if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
+          echo "no missing libraries"
+          composer --version
+
+      - name: Push
+        if: steps.build.outputs.commit
+        env:
+          COMMIT: ${{ steps.build.outputs.commit }}
+        run: |
+          git push origin "$COMMIT:refs/heads/$BRANCH"
+          if [ -n "$TAG" ]; then
+            git push --force origin "$COMMIT:refs/tags/$TAG"
+            version=$(git show "$COMMIT:package.json" | jq -r .version)
+            if ! git ls-remote --exit-code --tags origin "refs/tags/$version" >/dev/null; then
+              git push origin "$COMMIT:refs/tags/$version"
+            fi
+          fi
