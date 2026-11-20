@@ -15,23 +15,22 @@ env:
 
 jobs:
   setup-php:
-    name: ${{ matrix.runner }} (PHP ${{ matrix.php }})
+    name: ${{ matrix.action }} (PHP ${{ matrix.php }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         runner: [checklane-2vcpu]
+        action: [checklane/setup-php@v2, shivammathur/setup-php@v2]
         php: ['8.3', '8.4', '8.5']
-        include:
-          - runner: ubuntu-24.04
-            php: '8.5'
     steps:
 
       - name: Runner
         run: echo "RUNNER_NAME=$RUNNER_NAME RUNNER_ENVIRONMENT=$RUNNER_ENVIRONMENT ImageOS=${ImageOS:-}"
 
-      - name: Setup PHP
+      - name: Setup PHP (fork, builds cache)
+        if: matrix.action == 'checklane/setup-php@v2'
         uses: checklane/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
@@ -40,6 +39,15 @@ jobs:
           ini-file: production
         env:
           use_builds_cache: true
+
+      - name: Setup PHP (upstream)
+        if: matrix.action == 'shivammathur/setup-php@v2'
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: ${{ env.EXTENSIONS }}
+          coverage: none
+          ini-file: production
 
       - name: Check PHP
         run: |
